@@ -1,0 +1,56 @@
+﻿<!DOCTYPE html>
+
+<head>
+    <meta charset="utf-8"/>
+    <title>Поправи ме, моля!</title>
+
+    <script src="webgl-fmi.js"></script>
+
+    <script id="vshader" type="x-shader/x-vertex">
+        void main (){
+            gl_Position = vec4(0.935, 0.9, 0, 1);
+            gl_PointSize = 16.0;
+        }
+    </script>
+
+    <!-- [ГРЕШКА 1] Тук цветът също не беше правилен. 
+        Грешен ред : gl_FragColor = vec4(0,0,0,1); -->
+    <script id="fshader" type="x-shader/x-fragment">
+        void main( ){
+            gl_FragColor = vec4(0, 0, 0.69, 1); 
+        }
+    </script>
+
+    <script>
+        function start(){
+            //[ГРЕШКА 2] Тук се декларира ликална променлива и съответно когато се използва по-късно 
+            // глобалната тя е null. Грешен ред :
+            // var gl = getContext("picasso");
+            gl = getContext("picasso");
+            glprog = getProgram("vshader","fshader");
+
+            // [ГРЕШКА 3] Тук цветът не е правилен. Грешен ред :
+            // gl.clearColor(0,0,0,1);
+            gl.clearColor(0.7, 0.8, 1, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // рисуване на точка (детайлите - друг път)
+            gl.drawArrays(gl.POINTS, 0, 1);
+        }
+    </script>
+</head>
+
+<body onload="start()">
+        <h2>Поправи ме, моля!</h2>
+
+        <noscript>
+            Искаме JavaScript, но няма!
+        </noscript>
+
+        <!-- [ГРЕШКА 4] Тук проблемът е, че id-то рiсаssо всъщност съдържа символи на кирилица (рсао) и
+            съответно при опит да се намери  елемент в DOM-а с id написано с латински букво връща null.
+            Този проблем отне време да бъде намерен. -->
+        <canvas id="picasso" width="600" height="400" style="border: solid;">
+            Искаме canvas, но няма!
+        </canvas>
+</body>
