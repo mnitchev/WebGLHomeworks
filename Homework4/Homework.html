@@ -1,0 +1,405 @@
+﻿<!DOCTYPE html>
+
+<head>
+    <meta charset="utf-8"/>
+    <title>Вълнàта</title>
+
+    <script src="webgl-fmi.js">
+        // Направете следните промени по тази програма
+        //	(1)	Повърхността да е с подвижни вълни от центъра към периферията
+        //	(2)	Осветяването да е идеално и да няма ефект на Мах
+        //	(3)	Да може с бутони да се превключва между шоколадова повърхност
+        //		и повърхност, оцветена като дъгата
+    </script>
+    
+    <script id="vshader" type="x-shader/x-vertex">
+        uniform mat4 uProjectionMatrix;
+        uniform mat4 uViewMatrix;
+        uniform mat4 uModelMatrix;
+        
+        uniform bool uUseAmbient;
+        uniform vec3 uAmbientColor;
+
+        uniform bool uUseDiffuse;
+        uniform vec3 uDiffuseColor;
+
+        uniform vec3 uLightDir;
+        
+        attribute vec3 aXYZ;		// координати на връх
+        attribute vec3 aColor;		// цвят на връх
+        attribute vec3 aNormal;		// нормален вектор на връх
+
+        varying vec3 vNormal;
+        varying vec3 vColor;
+        varying vec3 vPos;
+        
+        void main (){
+            mat4 mvMatrix = uViewMatrix * uModelMatrix;
+            vec4 pos = mvMatrix * vec4(aXYZ, 1);
+            gl_Position = uProjectionMatrix * pos;
+
+            // околна светлина
+            vColor = aColor;
+            if (uUseAmbient)
+                vColor *= uAmbientColor;
+            
+            // дифузно отражение
+            vec3 normal = vec3(normalize(mvMatrix * vec4(aNormal, 0)));
+            vec3 light = normalize(-uLightDir);
+            if (uUseDiffuse)
+                vColor += aColor * uDiffuseColor * max(dot(normal, light), 0.0);
+
+            vPos = pos.xyz / pos.w;
+            vNormal = normal;
+        }
+    </script>
+    
+    <script id="fshader" type="x-shader/x-fragment">
+        precision mediump float;
+
+        // преместено тук от другия шейдър
+        uniform highp vec3 uLightDir;
+        uniform bool uUseSpecular;
+        uniform vec3 uSpecularColor;
+        uniform float uShininess;
+
+        varying vec3 vNormal;
+        varying vec3 vColor;
+        varying vec3 vPos;
+
+        void main(){
+            vec3 specularColor = vec3(0);
+            
+            // огледално отражение
+            if (uUseSpecular)
+            {
+                vec3 light = normalize(-uLightDir);
+                vec3 reflectedLight = normalize(reflect(light, normalize(vNormal)));
+                vec3 viewDir = normalize(vPos);
+
+                float cosa = max(dot(reflectedLight,viewDir), 0.0);
+                specularColor = uSpecularColor * pow(cosa, uShininess);
+            }
+
+            gl_FragColor = vec4(vColor + specularColor, 1);
+        }
+    </script>
+
+    <script>
+        
+        // С 40 върви малко бавно на моят компютър
+        var k = 30;
+        var colorFunction = nyanColors;
+        var nyanColorPalette = [];
+
+          // Връща цвета на шоколад за всеки връх
+        function chocolateColor(x, y){
+            return [0.35, 0.18, 0.06];
+        }
+
+        // Връща цвета от нян който съотвества на разстоянието на точката от центъра.
+        function nyanColors(x, y){
+            var radius = Math.sqrt(Math.pow(x, 2) + Math.pow(y, 2));
+            return nyanColorPalette[Math.round(radius)];
+        }
+
+        function start() {
+            var canvas = document.getElementById("picasso");
+            canvas.addEventListener('webglcontextlost', event => event.preventDefault, false);
+            canvas.addEventListener('webglcontextrestored', init, false);
+            
+            init();
+            drawFrame();
+        }
+        
+        function surface(x, y, offset) {
+            var r = Math.sqrt(x * x + y * y);
+            return 10 * Math.cos((r / 5) - offset) * Math.cos((r / 10)) * Math.cos((r / 20) - offset);
+        }
+        
+        function init() {
+            initializeGlobalVariables();
+            initializeScene();
+            // настройка на цветове и светлини
+            configureColor();
+            configureLight();
+            initializeNyanColors();
+        }
+        
+        var frame = 0;
+        var offset = 0;
+
+        function drawFrame() {
+            frame++;
+            offset+=0.2;
+            gl.clear(gl.COLOR_BUFFER_BIT + gl.DEPTH_BUFFER_BIT); // изчистваме цвета и дълбочината
+
+            var data = createBufferData(offset);
+            bindBuffer(data);
+            // включване на върховете
+            includeVertices();
+            // включване на цветовете
+            includeColors();
+            // включване на нормалните вектори
+            includeNormalVectors();
+
+            // движение на камерата около повърхнината с периодично
+            // приближаване към и отдалечаване от нея
+            var dist = 80 + 37 * Math.sin(frame / 100);
+            var d = 0.6 + 0.3 * Math.sin(frame / 200);
+            lookAt([dist * Math.cos(frame / 300) * d, dist * Math.sin(frame / 300) * d, (140 - dist) * d], [0.1, -0.1, 0], [0, 0, 1]);
+
+            useMatrix();
+            gl.drawArrays(gl.TRIANGLES, 0, (4 * k) * (4 * k) * (2 * 3));
+
+            rotateColors();
+            requestAnimationFrame(drawFrame);
+        }
+
+        // Главни Nyan цветове
+        var RED = [1, 0.39, 0.39];
+        var YELLOW = [1, 0.97, 0.47];
+        var GREEN = [0.33, 1, 0.31];
+        var BLUE = [0, 1, 1];
+        var MAGENTA = [1, 0.36, 0.98];
+        var eps = 0.25
+        var COLOR_STEP = 22;
+
+        function initializeNyanColors(){
+            var steps = Math.round(157 / 5);
+            var redToYellow = generateGradient(RED, YELLOW, steps);
+            nyanColorPalette = nyanColorPalette.concat(redToYellow);
+
+            var yellowToGreen = generateGradient(YELLOW, GREEN, steps);
+            nyanColorPalette = nyanColorPalette.concat(yellowToGreen);
+            
+            var greenToBlue = generateGradient(GREEN, BLUE, steps);
+            nyanColorPalette = nyanColorPalette.concat(greenToBlue);
+            
+            var blueToMagenta = generateGradient(BLUE, MAGENTA, steps);
+            nyanColorPalette = nyanColorPalette.concat(blueToMagenta);
+            
+            var magentaToRed = generateGradient(MAGENTA, RED, steps);
+            nyanColorPalette = nyanColorPalette.concat(magentaToRed);
+        }
+
+        function generateGradient(start, end, steps){
+            var stepR = ((end[0] - start[0]) / (steps - 1));
+            var stepG = ((end[1] - start[1]) / (steps - 1));
+            var stepB = ((end[2] - start[2]) / (steps - 1));
+
+            var colors = [];
+            range(steps).forEach(i => {
+                colors.push([start[0] + (stepR * i),
+                        start[1] + (stepG * i),
+                        start[2] + (stepB * i)]);
+            });
+            return colors;
+        }
+
+        // На всеки кадър завъртаме цветовете от nyanColorPallette като
+        // взимаме цветове от края и ги слагаме най-отпред.
+        var COLOR_ROTATION_SPEED = 5;
+        function rotateColors(){
+            range(COLOR_ROTATION_SPEED).forEach(() => {
+                var color = nyanColorPalette.pop();
+                nyanColorPalette.unshift(color);
+            })
+        }
+        
+        function createBufferData(offset){
+            var vertexHeights = getVertexHeights(offset);
+            var vertexNormalVectors = getNormalVectors(vertexHeights, offset);
+            var data = createData(vertexHeights, vertexNormalVectors);
+
+            return data;
+        }
+
+        // Създава точките. Гъстотата на точките е увеличена двойно, за да се премахне
+        // ефекта на Мах.
+        function getVertexHeights(offset){
+            var vertexHeights = []; // масив с височината във всеки връх
+            // изчисляваме височината във възлите
+            for (var x = -k, i = -2*k; i <= 2*k; i++, x+=0.5) {
+                vertexHeights[i] = [];
+                for (var y = -k, j = -2*k; j <= 2 * k; j++, y+=0.5){
+                    vertexHeights[i][j] = surface(x, y, offset);
+                }
+            }
+            return vertexHeights;
+        }
+
+        // Създава нормалните вектори за всяка точка
+        function getNormalVectors(vertexHeights, offset){
+            var vertexNormalVectors = []; // масив с нормалния вектор във всеки връх
+            // изчисляваме нормалните вектори във възлите
+            for (var x = -k, i = -2*k; i <= 2 * k; i++, x+=0.5) {
+                vertexNormalVectors[i] = [];
+                for (var y = -k, j = -2*k; j <= 2 * k; j++, y+=0.5) {
+                    var eps = 0.001;
+                    var p0 = [x, y, surface(x, y, offset)];
+                    var p1 = [x - eps, y, surface(x - eps, y, offset)];
+                    var p2 = [x, y - eps, surface(x, y - eps, offset)];
+                    vertexNormalVectors[i][j] = unitVector(vectorProduct(vectorPoints(p1, p0), vectorPoints(p2, p0)));
+                }
+            }
+            return vertexNormalVectors;
+        }
+
+
+        // генерираме триъгълниците: координати на върхове и нормали
+        // на върховете на всеки триъгълник слагаме нормалата от първия му връх
+        function createData(vertexHeights, vertexNormalVectors){
+            var data = [];
+            for (var x = -k, i = -2 * k; i < 2 * k; i++, x+=0.5)
+            for (var y = -k, j = -2 * k; j < 2 * k; j++, y+=0.5) {
+                var vertexColor = colorFunction(x, y);
+                data.push(x, y, vertexHeights[i][j],
+                        vertexNormalVectors[i][j][0], 
+                        vertexNormalVectors[i][j][1], 
+                        vertexNormalVectors[i][j][2],
+                        vertexColor[0], vertexColor[1], vertexColor[2]);
+                vertexColor = colorFunction(x + 0.5, y);
+                data.push(x + 0.5, y, vertexHeights[i + 1][j], 
+                        vertexNormalVectors[i + 1][j][0], 
+                        vertexNormalVectors[i + 1][j][1], 
+                        vertexNormalVectors[i + 1][j][2],
+                        vertexColor[0], vertexColor[1], vertexColor[2]);
+                vertexColor = colorFunction(x, y + 0.5);
+                data.push(x, y + 0.5, vertexHeights[i][j + 1],
+                        vertexNormalVectors[i][j + 1][0], 
+                        vertexNormalVectors[i][j + 1][1],
+                        vertexNormalVectors[i][j + 1][2],
+                        vertexColor[0], vertexColor[1], vertexColor[2]);
+                
+                vertexColor = colorFunction(x, y + 0.5);
+                data.push(x, y + 0.5, vertexHeights[i][j + 1], 
+                        vertexNormalVectors[i][j + 1][0],
+                        vertexNormalVectors[i][j + 1][1], 
+                        vertexNormalVectors[i][j + 1][2],
+                        vertexColor[0], vertexColor[1], vertexColor[2]);
+                vertexColor = colorFunction(x + 0.5, y);
+                data.push(x + 0.5, y, vertexHeights[i + 1][j], 
+                        vertexNormalVectors[i + 1][j][0], 
+                        vertexNormalVectors[i + 1][j][1], 
+                        vertexNormalVectors[i + 1][j][2],
+                        vertexColor[0], vertexColor[1], vertexColor[2]);
+                vertexColor = colorFunction(x + 0.5, y + 0.5);
+                data.push(x + 0.5, y + 0.5, vertexHeights[i + 1][j + 1], 
+                        vertexNormalVectors[i + 1][j + 1][0], 
+                        vertexNormalVectors[i + 1][j + 1][1], 
+                        vertexNormalVectors[i + 1][j + 1][2],
+                        vertexColor[0], vertexColor[1], vertexColor[2]);
+            }
+
+            return data;
+        }
+
+        // Настройки за WebGl
+        // Повечето от тези функции са преместени от init/drawFrame
+        // ==================
+
+        function bindBuffer(data){
+            var buf = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+        }
+
+        function configureLight(){
+            setLightingParameters();
+            configureLightModelling();
+        }
+
+        function setLightingParameters(){
+            var uShininess = gl.getUniformLocation(glprog, "uShininess");
+            var uLightDir = gl.getUniformLocation(glprog, "uLightDir");
+
+            gl.uniform1f(uShininess, 20);
+            gl.uniform3f(uLightDir, 0, 0, -1);
+        }
+
+        function configureLightModelling(){
+            var uUseAmbient = gl.getUniformLocation(glprog, "uUseAmbient");
+            var uUseDiffuse = gl.getUniformLocation(glprog, "uUseDiffuse");
+            var uUseSpecular = gl.getUniformLocation(glprog, "uUseSpecular");
+
+            gl.uniform1i(uUseAmbient, true);
+            gl.uniform1i(uUseDiffuse, true);
+            gl.uniform1i(uUseSpecular, true);
+        }
+        
+        function configureColor(){
+            var uAmbientColor = gl.getUniformLocation(glprog, "uAmbientColor");
+            var uDiffuseColor = gl.getUniformLocation(glprog, "uDiffuseColor");
+            var uSpecularColor = gl.getUniformLocation(glprog, "uSpecularColor");
+
+            gl.uniform3f(uAmbientColor, 0.5, 0.5, 0.5);
+            gl.uniform3f(uDiffuseColor, 1, 1, 1);
+            gl.uniform3f(uSpecularColor, 1, 1, 1);
+        }
+
+        function initializeGlobalVariables(){
+            gl = getContext("picasso");
+            glprog = getProgram("vshader", "fshader");
+            
+            uProjectionMatrix = gl.getUniformLocation(glprog, "uProjectionMatrix");
+            uViewMatrix = gl.getUniformLocation(glprog, "uViewMatrix");
+            uModelMatrix = gl.getUniformLocation(glprog, "uModelMatrix");
+        }
+
+        function initializeScene(){
+            gl.enable(gl.DEPTH_TEST);
+            gl.clearColor(1, 1, 1, 1);
+            
+            identity();
+            perspective(30, gl.canvas.width / gl.canvas.height, 1, 40000);
+        }
+        
+        function includeVertices(){
+            aXYZ = gl.getAttribLocation(glprog, "aXYZ");
+            gl.enableVertexAttribArray(aXYZ);
+            gl.vertexAttribPointer(aXYZ, 3, gl.FLOAT, false, 9 * FLOATS, 0 * FLOATS);
+        }
+
+        function includeNormalVectors(){
+            aNormal = gl.getAttribLocation(glprog, "aNormal");
+            gl.enableVertexAttribArray(aNormal);
+            gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 9 * FLOATS, 3 * FLOATS);
+        }
+
+        function includeColors(){
+            var aColor = gl.getAttribLocation(glprog, "aColor");
+            gl.enableVertexAttribArray(aColor);
+            gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 9 * FLOATS, 6 * FLOATS);
+        }
+
+        function range(upperBound = 0){
+            return Array.from(Array(upperBound).keys());
+        }
+
+        function changeToChocolate(){
+            colorFunction = chocolateColor;
+        }
+
+        function changeToNyan(){
+            colorFunction = nyanColors;
+        }
+    </script>	
+</head>
+
+<body onload="start()">
+    <h2>Вълнàта</h2>
+
+    <noscript>
+        Искаме JavaScript, но няма!
+    </noscript>
+    
+    <canvas id="picasso" width="1000" height="600" style="border: solid;">
+        Искаме canvas, но няма!
+    </canvas>
+
+    <div>
+        <button type="button" onclick="changeToChocolate()">От шоколад</button>
+        <button type="button" onclick="changeToNyan()">От нян</button>
+    </div>
+</body>
