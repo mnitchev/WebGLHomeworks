@@ -8,7 +8,7 @@ var DIVE_OFFSET = 5;
 
 var BLACK = [0.1, 0.1, 0.1];
 var WHITE = [1, 1, 1];
-var GREEN = [0, 1, 0];
+var GREEN = [0, 0.5, 0];
 var YELLOW = [1, 1, 0];
 
 class Bay {
