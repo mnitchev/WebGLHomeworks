@@ -1,0 +1,222 @@
+﻿<!DOCTYPE html>
+
+<head>
+    <meta charset="utf-8"/>
+    <title>Люлката</title>
+
+    <script src="webgl-fmi.js"></script>
+    <script src="homework7.js"></script>
+    <script id="vshader" type="x-shader/x-vertex">
+        uniform mat4 uProjectionMatrix;
+        uniform mat4 uViewMatrix;
+        uniform mat4 uModelMatrix;
+        
+        uniform bool uUseAmbient;
+        uniform vec3 uAmbientColor;
+
+        uniform bool uUseDiffuse;
+        uniform vec3 uDiffuseColor;
+
+        uniform vec3 uLightDir;
+        
+        attribute vec3 aXYZ;		// координати на връх
+        attribute vec3 aColor;		// цвят на връх
+        attribute vec3 aNormal;		// нормален вектор на връх
+
+        varying vec3 vNormal;
+        varying vec3 vColor;
+        varying vec3 vPos;
+        
+        void main ()
+        {
+            mat4 mvMatrix = uViewMatrix * uModelMatrix;
+            vec4 pos = mvMatrix * vec4(aXYZ,1);
+            gl_Position = uProjectionMatrix * pos;
+
+            // околна светлина
+            vColor = aColor;
+            if (uUseAmbient)
+                vColor *= uAmbientColor;
+            
+            // дифузно отражение
+            vec3 normal = vec3(normalize(mvMatrix*vec4(aNormal,0)));
+            vec3 light = normalize(-uLightDir);
+            if (uUseDiffuse)
+                vColor += aColor*uDiffuseColor*max(dot(normal,light),0.0);
+
+            vPos = pos.xyz/pos.w;
+            vNormal = normal;
+        }
+    </script>
+    
+    <script id="fshader" type="x-shader/x-fragment">
+        precision mediump float;
+
+        // преместено тук от другия шейдър
+        uniform highp vec3 uLightDir;
+        uniform bool uUseSpecular;
+        uniform vec3 uSpecularColor;
+
+        varying vec3 vNormal;
+        varying vec3 vColor;
+        varying vec3 vPos;
+
+        void main( )
+        {
+            vec3 light = normalize(-uLightDir);
+            
+            // намиране на отразения лъч
+            vec3 reflectedLight = normalize(reflect(light,normalize(vNormal)));
+
+            // в локалната координатна система "окото" на гледащия е в (0,0,0)
+            // а вектора от точката до "окото" е pos-(0,0,0) = pos
+            vec3 viewDir = normalize(vPos);
+
+            // готови сме да сметнем лъскавината
+            float cosa = abs(dot(reflectedLight,viewDir));
+            vec3 specularColor = vec3(pow(cosa,4.0));
+            
+            gl_FragColor = vec4(vColor+specularColor,1);
+        }
+    </script>
+
+    <script>
+        function start( )
+        {
+            var	canvas = document.getElementById("picasso");
+            canvas.addEventListener('webglcontextrestored',function(){init();},false);
+            canvas.addEventListener('webglcontextlost',function(event){event.preventDefault();},false);
+
+            init();
+            drawFrame();
+        }
+        
+        var n = 7; // брой топки
+        function init()
+        {
+            gl = getContext("picasso");
+            glprog = getProgram("vshader","fshader");
+
+            
+            aXYZ = gl.getAttribLocation(glprog,"aXYZ");
+            uProjectionMatrix = gl.getUniformLocation(glprog,"uProjectionMatrix");
+            uViewMatrix = gl.getUniformLocation(glprog,"uViewMatrix");
+            uModelMatrix = gl.getUniformLocation(glprog,"uModelMatrix");
+
+            aColor = gl.getAttribLocation(glprog,"aColor");
+            uAmbientColor = gl.getUniformLocation(glprog,"uAmbientColor");
+            uUseAmbient   = gl.getUniformLocation(glprog,"uUseAmbient");
+
+            aNormal = gl.getAttribLocation(glprog,"aNormal");
+            uDiffuseColor = gl.getUniformLocation(glprog,"uDiffuseColor");
+            uUseDiffuse = gl.getUniformLocation(glprog,"uUseDiffuse");
+            uUseSpecular = gl.getUniformLocation(glprog,"uUseSpecular");
+            uLightDir = gl.getUniformLocation(glprog,"uLightDir");
+
+            gl.enable(gl.DEPTH_TEST);
+            gl.clearColor(0.90, 0.56, 0.45, 1);
+
+            identity();
+            perspective(30,gl.canvas.width/gl.canvas.height,1,40000);
+
+            gl.uniform3f(uAmbientColor,0.7,0.7,0.7);
+            gl.uniform1i(uUseAmbient,true);
+
+            gl.uniform3f(uDiffuseColor,1,1,1);
+            gl.uniform1i(uUseDiffuse,true);
+            
+            gl.uniform3f(uLightDir,0,-1,-0.3);
+
+            // обектите, съставящи люлката на Нютон,
+            // могат да бъдат създадени тук:
+            // ...
+            staticObjects = createStaticObjects();
+
+            balls = [];
+            var previousBall = new NewtonBall([0, RADIUS, RADIUS], [0, 0, RADIUS]);
+            balls.push(previousBall);
+            range({from : 1,
+                 to: n
+                }, callback = (i) => {
+                    var ball =  new NewtonBall([0, -2 * i, 0], [0, -2 * i, RADIUS]);
+                    // ball.registerRight(previousBall);
+                    // previousBall.registerLeft(ball);
+                    balls.push(ball);
+                    previousBall = ball;
+                });
+                
+            balls.forEach(ball => {
+                balls.forEach(otherBall => {
+                    if(ball != otherBall){
+                        ball.registerBall(otherBall);
+                    }
+                });
+            });
+        }
+        
+        function createStaticObjects(){
+            var objects = [];
+            objects.push(new Cube([0, -6, -RADIUS/2], BASE_SIZE, [0.5, 1, 0.02], GRAY));
+            objects.push(new Cylinder([BASE_SIZE / 4, BASE_SIZE / 2 - 6.5, -RADIUS/2 - 1], 0.8, 2, BROWN));
+            objects.push(new Cylinder([BASE_SIZE / 4, -BASE_SIZE / 2 - 6.5, -RADIUS/2 - 1], 0.8, 2, BROWN));
+            objects.push(new Cylinder([-BASE_SIZE / 4, -BASE_SIZE / 2 - 6.5, -RADIUS/2 - 1], 0.8, 2, BROWN));
+            objects.push(new Cylinder([-BASE_SIZE / 4, BASE_SIZE / 2 - 6.5, -RADIUS/2 - 1], 0.8, 2, BROWN));
+
+            objects.push(new Sphere([BASE_SIZE / 4, BASE_SIZE / 2 - 6.5, -RADIUS/2 + 1], 0.8, BROWN));
+            objects.push(new Sphere([BASE_SIZE / 4, -BASE_SIZE / 2 - 6.5, -RADIUS/2 + 1], 0.8, BROWN));
+            objects.push(new Sphere([-BASE_SIZE / 4, -BASE_SIZE / 2 - 6.5, -RADIUS/2 + 1], 0.8, BROWN));
+            objects.push(new Sphere([-BASE_SIZE / 4, BASE_SIZE / 2 - 6.5, -RADIUS/2 + 1], 0.8, BROWN));
+
+            objects.push(new Cylinder([BASE_SIZE / 4, BASE_SIZE / 2 - 6.5, -RADIUS/2], 0.2, 3 * RADIUS / 2, LIGHT_GRAY));
+            objects.push(new Cylinder([BASE_SIZE / 4, -BASE_SIZE / 2 - 6.5, -RADIUS/2], 0.2, 3 * RADIUS / 2, LIGHT_GRAY));
+            objects.push(new Cylinder([-BASE_SIZE / 4, -BASE_SIZE / 2 - 6.5, -RADIUS/2], 0.2, 3 * RADIUS / 2, LIGHT_GRAY));
+            objects.push(new Cylinder([-BASE_SIZE / 4, BASE_SIZE / 2 - 6.5, -RADIUS/2], 0.2, 3 * RADIUS / 2, LIGHT_GRAY));
+
+            objects.push(new Sphere([BASE_SIZE / 4, BASE_SIZE / 2 - 6.5,  RADIUS], 0.2, LIGHT_GRAY));
+            objects.push(new Sphere([BASE_SIZE / 4, -BASE_SIZE / 2 - 6.5, RADIUS], 0.2, LIGHT_GRAY));
+            objects.push(new Sphere([-BASE_SIZE / 4, -BASE_SIZE / 2 - 6.5, RADIUS], 0.2, LIGHT_GRAY));
+            objects.push(new Sphere([-BASE_SIZE / 4, BASE_SIZE / 2 - 6.5, RADIUS], 0.2, LIGHT_GRAY));
+
+            objects.push(new Cylinder([BASE_SIZE / 2 - 5, -RADIUS, -RADIUS/2 - 11.5], 0.2, 2* RADIUS, LIGHT_GRAY, 90));
+            objects.push(new Cylinder([BASE_SIZE / 2 - 15, -RADIUS, -RADIUS/2 - 11.5], 0.2, 2* RADIUS, LIGHT_GRAY, 90));
+
+            return objects;
+        }
+
+        var frame = 0;
+    
+        
+        function drawFrame()
+        {
+            frame++;
+            gl.clear(gl.COLOR_BUFFER_BIT+gl.DEPTH_BUFFER_BIT);
+
+            lookAt([55*Math.cos(frame/300),55*Math.sin(frame/300),0], [0,0,0], [0,0,1]);
+            // lookAt([80, -6, 0], [0, -6, 0], [0, 0, 1]); // front
+            // lookAt([0, 80, 0], [0,0,0], [0,0,1]);       //side
+            // рисуване на стойката
+            // ...
+          
+            // рисуване на n топки
+            // for (var i=0; i<n; i++)
+            // {
+            //     // ...
+            // }
+            balls.forEach(ball => ball.draw());
+            staticObjects.forEach(object => object.draw());
+            requestAnimationFrame(drawFrame);
+        }
+    </script>	
+</head>
+
+<body onload="start()">
+    <h2>Люлката</h2>
+
+    <noscript>
+        Искаме JavaScript, но няма!
+    </noscript>
+    
+    <canvas id="picasso" width="1200" height="800" style="border: solid;">
+        Искаме canvas, но няма!
+    </canvas>
+</body>
