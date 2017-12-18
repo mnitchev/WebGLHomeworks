@@ -28,10 +28,10 @@ class Bay {
             z: 0
         });
 
-        this.set(0, 0, ranom(0, this.max / 2));
-        this.set(this.max, 0, ranom(0, this.max / 2));
-        this.set(this.max, this.max, ranom(0, this.max / 2));
-        this.set(0, this.max, ranom(0, this.max / 2));
+        this.set(0, 0, random(0, this.max / 2));
+        this.set(this.max, 0, random(0, this.max / 2));
+        this.set(this.max, this.max, random(0, this.max / 2));
+        this.set(0, this.max, random(0, this.max / 2));
 
         this.divide(this.max);
     }
