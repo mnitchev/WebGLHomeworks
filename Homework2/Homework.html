@@ -1,0 +1,183 @@
+﻿<!DOCTYPE html>
+
+<head>
+    <meta charset="utf-8"/>
+    <title>Чергата</title>
+
+    <script src="webgl-fmi.js"></script>	
+    
+    <script id="vshader" type="x-shader/x-vertex">
+        attribute vec2 aXY;
+        attribute vec3 aRGB;
+        varying vec3 vRGB;
+        void main(){
+            gl_Position = vec4(aXY, 0, 1);
+            gl_PointSize = 10.0;
+            vRGB = aRGB;
+        }
+    </script>
+    
+    <script id="fshader" type="x-shader/x-fragment">
+        precision mediump float;
+        varying vec3 vRGB;
+        void main(){
+            gl_FragColor = vec4(vRGB, 1);
+        }
+    </script>
+    
+    <script>
+        var NUMBER_OF_STRIPS = 11;
+        var MIN_FREQUENCY = 3;
+        var MAX_FREQUENCY = 15;
+        var NUMBER_OF_POINTS = 512;
+        var STRIP_WIDTH = 2 / (NUMBER_OF_STRIPS - 1);
+        var MIN_AMPLITUDE = 1.1/ NUMBER_OF_STRIPS;
+        var MAX_AMPLITUDE = (STRIP_WIDTH / 2) / NUMBER_OF_STRIPS;
+        var WHITE_STRIPE_WIDTH = 0.3 / NUMBER_OF_STRIPS; // при повече ленти искаме тази стойност да намлява
+        
+        //Минималните и максималните стойности съответно за R G B цветовете
+        //Генерираме цвят със случайни стойности между MIN и MAX за всяка компонента
+        var MIN_RED = 0.6;
+        var MAX_RED = 1;
+        var MIN_GREEN = 0.6;
+        var MAX_GREEN = 1;
+        var MIN_BLUE = 0.6;
+        var MAX_BLUE = 1;
+
+        var BLACK = [0, 0, 0]
+
+        function start(){
+            gl = getContext("picasso");
+            glprog = getProgram("vshader", "fshader");
+
+            aXY = gl.getAttribLocation(glprog, "aXY");
+            aRGB = gl.getAttribLocation(glprog, "aRGB");
+            
+            gl.clearColor(1, 1, 1, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // брой ленти m
+            var m = NUMBER_OF_STRIPS; 
+            var data = [];
+
+            // от тук до края на функцията да се сложи код,
+            // който създава и рисува m цветни вълнообразни ленти
+            
+            var amplitude = getRandomAmplitude();
+            var frequency = getRandomFrequency();
+            var numberOfPoints = NUMBER_OF_POINTS;
+            var previousSinusoid = generateSinsoid(numberOfPoints, amplitude, frequency);
+            var offset = -1.1;
+            for (k = 0; k < numberOfPoints * 2; k+=2){
+                previousSinusoid[k] = previousSinusoid[k] += offset;
+            }
+
+            for(var i = 0; i < m; i++){
+                var colour = getRandomColour();
+                amplitude = getRandomAmplitude();
+                frequency = getRandomFrequency();
+                var nextSinusoid = generateSinsoid(numberOfPoints, amplitude, frequency);
+
+                offset += STRIP_WIDTH;
+        
+                for (var k = 0; k < numberOfPoints * 2; k+=2){
+                    nextSinusoid[k] = nextSinusoid[k] += offset;
+                }
+
+                for(var j = 0; j < 2 * numberOfPoints; j+=2){
+                    data.push(previousSinusoid[j]);
+                    data.push(previousSinusoid[j+1]);
+                    data.push(colour[0]);
+                    data.push(colour[1]);
+                    data.push(colour[2]);
+                    data.push(nextSinusoid[j]);
+                    data.push(nextSinusoid[j+1]);
+                    data.push(colour[0]);
+                    data.push(colour[1]);
+                    data.push(colour[2]);
+                }
+                for(var j = 0; j < 2 * numberOfPoints; j+=2){
+                    data.push(previousSinusoid[j]);
+                    data.push(previousSinusoid[j+1]);
+                    data.push(BLACK[0]);
+                    data.push(BLACK[1]);
+                    data.push(BLACK[2]);
+                }
+                for(var j = 0; j < 2 * numberOfPoints; j+=2){
+                    data.push(nextSinusoid[j]);
+                    data.push(nextSinusoid[j+1]);
+                    data.push(BLACK[0]);
+                    data.push(BLACK[1]);
+                    data.push(BLACK[2]);
+                }
+
+                previousSinusoid=nextSinusoid;
+                for (var k = 0; k < numberOfPoints * 2; k+=2){
+                    nextSinusoid[k] += WHITE_STRIPE_WIDTH;
+                }
+            }
+
+            var stripesBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, stripesBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+
+            gl.enableVertexAttribArray(aXY);
+            gl.vertexAttribPointer(aXY, 2, gl.FLOAT, false, 5 * FLOATS, 0 * FLOATS);
+            gl.enableVertexAttribArray(aRGB);
+            gl.vertexAttribPointer(aRGB, 3, gl.FLOAT, false, 5 * FLOATS, 2 * FLOATS);
+            
+            var stripSize = 2 * NUMBER_OF_POINTS;
+            for(var k = 0; k < m; k++){ 
+                gl.drawArrays(gl.TRIANGLE_STRIP, k * 2 * stripSize, stripSize);
+                gl.drawArrays(gl.LINE_STRIP, k * 2 * stripSize + stripSize, stripSize / 2);
+                gl.drawArrays(gl.LINE_STRIP, (k * 2 * stripSize) + stripSize * 1.5, stripSize / 2);
+            }
+        }
+
+        function getRandomNumber(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+
+        function getRandomColour(){
+            return [getRandomNumber(MIN_RED, MAX_RED), getRandomNumber(MIN_GREEN, MAX_GREEN), getRandomNumber(MIN_BLUE, MAX_BLUE)];
+        }
+        
+        function getRandomAmplitude(){
+            return getRandomNumber(MIN_AMPLITUDE, MAX_AMPLITUDE);
+        }
+
+        function getRandomFrequency(){
+            return getRandomNumber(MIN_FREQUENCY, MAX_FREQUENCY);
+        }
+
+        function getSinsosoidPoint(y, amplitude, frequency){
+            return  Math.sin(y * frequency) * amplitude; 
+        }
+
+        function generateSinsoid(numberOfPoints, amplitude, frequency){
+            var points = [];
+            var step = 2.1 / numberOfPoints;
+            var y = 1.0;
+            for(var i = 0; i <= numberOfPoints; i++){
+                var x = getSinsosoidPoint(y, amplitude, frequency);
+                points.push(x);
+                points.push(y);
+                y-=step;
+            }
+            return points;
+        }
+    </script>	
+</head>
+
+<body onload="start()">
+    <h2>Чергата</h2>
+
+    <noscript>
+        Искаме JavaScript, но няма!
+    </noscript>
+    
+    <canvas id="picasso" width="600" height="400" style="border: solid;">
+        Искаме canvas, но няма!
+    </canvas>
+</body>
