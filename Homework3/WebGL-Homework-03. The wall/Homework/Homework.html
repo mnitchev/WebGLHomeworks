@@ -1,0 +1,69 @@
+﻿<!DOCTYPE html>
+
+<head>
+    <meta charset="utf-8"/>
+    <title>Стената</title>
+
+    <script src="webgl-fmi.js"></script>	
+    <script src="homework3.js"></script>
+    
+    <script id="vshader" type="x-shader/x-vertex">
+        uniform mat4 uProjectionMatrix;
+        uniform mat4 uViewMatrix;
+        uniform mat4 uModelMatrix;
+        attribute vec3 aXYZ;
+        void main ()
+        {
+            gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aXYZ,1);
+        }
+    </script>
+    
+    <script id="fshader" type="x-shader/x-fragment">
+        precision mediump float;
+        uniform vec3 uColor;
+        void main( )
+        {
+            gl_FragColor = vec4(uColor,1);
+        }
+    </script>
+
+    <script>
+        function start( )
+        {
+            gl = getContext("picasso");
+            glprog = getProgram("vshader", "fshader");
+            
+            aXYZ = gl.getAttribLocation(glprog, "aXYZ");
+            uColor = gl.getUniformLocation(glprog, "uColor");
+            uProjectionMatrix = gl.getUniformLocation(glprog, "uProjectionMatrix");
+            uViewMatrix = gl.getUniformLocation(glprog, "uViewMatrix");
+            uModelMatrix = gl.getUniformLocation(glprog, "uModelMatrix");
+
+            gl.clearColor(1, 1, 1, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            var proj = perspMatrix(30, gl.canvas.width / gl.canvas.height, 1,40000);
+            gl.uniformMatrix4fv(uProjectionMatrix, false, proj);
+
+            // var view = viewMatrix([0, -25, 100], [0, -15, 0], [0, 0, 1]); // отгоре
+            // var view = viewMatrix([50, -20, 5], [0, 0, 5], [0, 0, 1]);  // отстрани
+            var view = viewMatrix([40, -55, 50], [-2, -1, 0], [0, 0, 1]); // отгоре и отстрани
+            gl.uniformMatrix4fv(uViewMatrix,false,view);
+            
+            // функцията е дефинирана във файла homework3.js
+            drawHearth();
+        }
+    </script>	
+</head>
+
+<body onload="start()">
+    <h2>Стената</h2>
+
+    <noscript>
+        Искаме JavaScript, но няма!
+    </noscript>
+    
+    <canvas id="picasso" width="1500" height="750" style="border: solid;">
+        Искаме canvas, но няма!
+    </canvas>
+</body>
